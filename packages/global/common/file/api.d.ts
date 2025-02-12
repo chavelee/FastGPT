@@ -1,8 +1,11 @@
-export type UploadImgProps = {
-  base64Img: string;
-  expiredTime?: Date;
+import { OutLinkChatAuthProps } from '../../support/permission/chat.d';
+
+export type preUploadImgProps = OutLinkChatAuthProps & {
+  // expiredTime?: Date;
   metadata?: Record<string, any>;
-  shareId?: string;
+};
+export type UploadImgProps = preUploadImgProps & {
+  base64Img: string;
 };
 
 export type UrlFetchParams = {
@@ -11,6 +14,7 @@ export type UrlFetchParams = {
 };
 export type UrlFetchResponse = {
   url: string;
+  title: string;
   content: string;
   selector?: string;
 }[];
