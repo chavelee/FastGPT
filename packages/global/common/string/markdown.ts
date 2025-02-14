@@ -1,4 +1,6 @@
-import { simpleText } from './tools';
+import { batchRun } from '../fn/utils';
+import { getNanoid, simpleText } from './tools';
+import type { ImageType } from '../../../service/worker/readFile/type';
 
 /* Delete redundant text in markdown */
 export const simpleMarkdownText = (rawText: string) => {
@@ -15,10 +17,10 @@ export const simpleMarkdownText = (rawText: string) => {
     return `[${cleanedLinkText}](${url})`;
   });
 
-  // replace special \.* ……
-  const reg1 = /\\([-.!`_(){}\[\]])/g;
+  // replace special #\.* ……
+  const reg1 = /\\([#`!*()+-_\[\]{}\\.])/g;
   if (reg1.test(rawText)) {
-    rawText = rawText.replace(/\\([`!*()+-_\[\]{}\\.])/g, '$1');
+    rawText = rawText.replace(reg1, '$1');
   }
 
   // replace \\n
@@ -45,30 +47,74 @@ export const uploadMarkdownBase64 = async ({
   uploadImgController
 }: {
   rawText: string;
-  uploadImgController: (base64: string) => Promise<string>;
+  uploadImgController?: (base64: string) => Promise<string>;
 }) => {
-  // match base64, upload and replace it
-  const base64Regex = /data:image\/.*;base64,([^\)]+)/g;
-  const base64Arr = rawText.match(base64Regex) || [];
-  // upload base64 and replace it
-  await Promise.all(
-    base64Arr.map(async (base64Img) => {
-      try {
-        const str = await uploadImgController(base64Img);
+  if (uploadImgController) {
+    // match base64, upload and replace it
+    const base64Regex = /data:image\/.*;base64,([^\)]+)/g;
+    const base64Arr = rawText.match(base64Regex) || [];
 
-        rawText = rawText.replace(base64Img, str);
-      } catch (error) {
-        rawText = rawText.replace(base64Img, '');
-        rawText = rawText.replace(/!\[.*\]\(\)/g, '');
-      }
-    })
-  );
-
-  // Remove white space on both sides of the picture
-  const trimReg = /(!\[.*\]\(.*\))\s*/g;
-  if (trimReg.test(rawText)) {
-    rawText = rawText.replace(trimReg, '$1');
+    // upload base64 and replace it
+    await batchRun(
+      base64Arr,
+      async (base64Img) => {
+        try {
+          const str = await uploadImgController(base64Img);
+          rawText = rawText.replace(base64Img, str);
+        } catch (error) {
+          rawText = rawText.replace(base64Img, '');
+          rawText = rawText.replace(/!\[.*\]\(\)/g, '');
+        }
+      },
+      20
+    );
   }
 
-  return simpleMarkdownText(rawText);
+  // Remove white space on both sides of the picture
+  // const trimReg = /(!\[.*\]\(.*\))\s*/g;
+  // if (trimReg.test(rawText)) {
+  //   rawText = rawText.replace(trimReg, '$1');
+  // }
+
+  return rawText;
+};
+
+export const markdownProcess = async ({
+  rawText,
+  uploadImgController
+}: {
+  rawText: string;
+  uploadImgController?: (base64: string) => Promise<string>;
+}) => {
+  const imageProcess = await uploadMarkdownBase64({
+    rawText,
+    uploadImgController
+  });
+
+  return simpleMarkdownText(imageProcess);
+};
+
+export const matchMdImgTextAndUpload = (text: string) => {
+  const base64Regex = /!\[([^\]]*)\]\((data:image\/[^;]+;base64[^)]+)\)/g;
+  const imageList: ImageType[] = [];
+
+  text = text.replace(base64Regex, (match, altText, base64Url) => {
+    const uuid = `IMAGE_${getNanoid(12)}_IMAGE`;
+    const mime = base64Url.split(';')[0].split(':')[1];
+    const base64 = base64Url.split(',')[1];
+
+    imageList.push({
+      uuid,
+      base64,
+      mime
+    });
+
+    // 保持原有的 alt 文本，只替换 base64 部分
+    return `![${altText}](${uuid})`;
+  });
+
+  return {
+    text,
+    imageList
+  };
 };
