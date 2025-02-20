@@ -1,89 +1,116 @@
-import type { NextApiRequest, NextApiResponse } from 'next';
-import { jsonRes } from '@fastgpt/service/common/response';
-import { withNextCors } from '@fastgpt/service/common/middle/cors';
 import type { SearchTestProps, SearchTestResponse } from '@/global/core/dataset/api.d';
-import { connectToDatabase } from '@/service/mongo';
-import { authDataset } from '@fastgpt/service/support/permission/auth/dataset';
-import { authTeamBalance } from '@/service/support/permission/auth/bill';
-import { pushGenerateVectorBill } from '@/service/support/wallet/bill/push';
-import { searchDatasetData } from '@/service/core/dataset/data/controller';
+import { authDataset } from '@fastgpt/service/support/permission/dataset/auth';
+import { pushGenerateVectorUsage } from '@/service/support/wallet/usage/push';
+import {
+  deepRagSearch,
+  defaultSearchDatasetData
+} from '@fastgpt/service/core/dataset/search/controller';
 import { updateApiKeyUsage } from '@fastgpt/service/support/openapi/tools';
-import { BillSourceEnum } from '@fastgpt/global/support/wallet/bill/constants';
-import { searchQueryExtension } from '@fastgpt/service/core/ai/functions/queryExtension';
+import { UsageSourceEnum } from '@fastgpt/global/support/wallet/usage/constants';
+import {
+  checkTeamAIPoints,
+  checkTeamReRankPermission
+} from '@fastgpt/service/support/permission/teamLimit';
+import { NextAPI } from '@/service/middleware/entry';
+import { ReadPermissionVal } from '@fastgpt/global/support/permission/constant';
+import { CommonErrEnum } from '@fastgpt/global/common/error/code/common';
+import { useIPFrequencyLimit } from '@fastgpt/service/common/middle/reqFrequencyLimit';
+import { ApiRequestProps } from '@fastgpt/service/type/next';
 
-export default withNextCors(async function handler(req: NextApiRequest, res: NextApiResponse<any>) {
-  try {
-    await connectToDatabase();
-    const {
-      datasetId,
-      text,
-      limit = 1500,
-      similarity,
-      searchMode,
-      usingReRank
-    } = req.body as SearchTestProps;
+async function handler(req: ApiRequestProps<SearchTestProps>): Promise<SearchTestResponse> {
+  const {
+    datasetId,
+    text,
+    limit = 1500,
+    similarity,
+    searchMode,
+    usingReRank,
 
-    if (!datasetId || !text) {
-      throw new Error('缺少参数');
-    }
+    datasetSearchUsingExtensionQuery = false,
+    datasetSearchExtensionModel,
+    datasetSearchExtensionBg,
 
-    const start = Date.now();
+    datasetDeepSearch = false,
+    datasetDeepSearchModel,
+    datasetDeepSearchMaxTimes,
+    datasetDeepSearchBg
+  } = req.body;
 
-    // auth dataset role
-    const { dataset, teamId, tmbId, apikey } = await authDataset({
-      req,
-      authToken: true,
-      authApiKey: true,
-      datasetId,
-      per: 'r'
-    });
+  if (!datasetId || !text) {
+    return Promise.reject(CommonErrEnum.missingParams);
+  }
 
-    // auth balance
-    await authTeamBalance(teamId);
+  const start = Date.now();
 
-    // query extension
-    // const { queries } = await searchQueryExtension({
-    //   query: text,
-    //   model: global.chatModels[0].model
-    // });
+  // auth dataset role
+  const { dataset, teamId, tmbId, apikey } = await authDataset({
+    req,
+    authToken: true,
+    authApiKey: true,
+    datasetId,
+    per: ReadPermissionVal
+  });
+  // auth balance
+  await checkTeamAIPoints(teamId);
 
-    const { searchRes, tokens, ...result } = await searchDatasetData({
-      rawQuery: text,
-      queries: [text],
-      model: dataset.vectorModel,
-      limit: Math.min(limit, 20000),
-      similarity,
-      datasetIds: [datasetId],
-      searchMode,
-      usingReRank
-    });
-
-    // push bill
-    const { total } = pushGenerateVectorBill({
-      teamId,
-      tmbId,
-      tokens,
-      model: dataset.vectorModel,
-      source: apikey ? BillSourceEnum.api : BillSourceEnum.fastgpt
-    });
-    if (apikey) {
-      updateApiKeyUsage({
-        apikey,
-        usage: total
+  const searchData = {
+    histories: [],
+    teamId,
+    reRankQuery: text,
+    queries: [text],
+    model: dataset.vectorModel,
+    limit: Math.min(limit, 20000),
+    similarity,
+    datasetIds: [datasetId],
+    searchMode,
+    usingReRank: usingReRank && (await checkTeamReRankPermission(teamId))
+  };
+  const { searchRes, tokens, queryExtensionResult, deepSearchResult, ...result } = datasetDeepSearch
+    ? await deepRagSearch({
+        ...searchData,
+        datasetDeepSearchModel,
+        datasetDeepSearchMaxTimes,
+        datasetDeepSearchBg
+      })
+    : await defaultSearchDatasetData({
+        ...searchData,
+        datasetSearchUsingExtensionQuery,
+        datasetSearchExtensionModel,
+        datasetSearchExtensionBg
       });
-    }
 
-    jsonRes<SearchTestResponse>(res, {
-      data: {
-        list: searchRes,
-        duration: `${((Date.now() - start) / 1000).toFixed(3)}s`,
-        ...result
-      }
-    });
-  } catch (err) {
-    jsonRes(res, {
-      code: 500,
-      error: err
+  // push bill
+  const { totalPoints } = pushGenerateVectorUsage({
+    teamId,
+    tmbId,
+    inputTokens: tokens,
+    model: dataset.vectorModel,
+    source: apikey ? UsageSourceEnum.api : UsageSourceEnum.fastgpt,
+
+    ...(queryExtensionResult && {
+      extensionModel: queryExtensionResult.model,
+      extensionInputTokens: queryExtensionResult.inputTokens,
+      extensionOutputTokens: queryExtensionResult.outputTokens
+    }),
+    ...(deepSearchResult && {
+      deepSearchModel: deepSearchResult.model,
+      deepSearchInputTokens: deepSearchResult.inputTokens,
+      deepSearchOutputTokens: deepSearchResult.outputTokens
+    })
+  });
+  if (apikey) {
+    updateApiKeyUsage({
+      apikey,
+      totalPoints: totalPoints
     });
   }
-});
+
+  return {
+    list: searchRes,
+    duration: `${((Date.now() - start) / 1000).toFixed(3)}s`,
+    queryExtensionModel: queryExtensionResult?.model,
+    ...result
+  };
+}
+
+export default NextAPI(useIPFrequencyLimit({ id: 'search-test', seconds: 1, limit: 15 }), handler);
