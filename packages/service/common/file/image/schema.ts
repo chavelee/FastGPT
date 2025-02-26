@@ -1,6 +1,7 @@
 import { TeamCollectionName } from '@fastgpt/global/support/user/team/constant';
-import { connectionMongo, type Model } from '../../mongo';
-const { Schema, model, models } = connectionMongo;
+import { connectionMongo, getMongoModel } from '../../mongo';
+import { MongoImageSchemaType } from '@fastgpt/global/common/file/image/type.d';
+const { Schema } = connectionMongo;
 
 const ImageSchema = new Schema({
   teamId: {
@@ -12,27 +13,19 @@ const ImageSchema = new Schema({
     type: Date,
     default: () => new Date()
   },
-  binary: {
-    type: Buffer
-  },
-  expiredTime: {
-    type: Date
-  },
-  metadata: {
-    type: Object
-  }
+  expiredTime: Date,
+  binary: Buffer,
+  metadata: Object
 });
 
 try {
-  ImageSchema.index({ expiredTime: 1 }, { expireAfterSeconds: 60 });
+  // tts expired（60 Minutes）
+  ImageSchema.index({ expiredTime: 1 }, { expireAfterSeconds: 60 * 60 });
+  ImageSchema.index({ type: 1 });
+  // delete related img
+  ImageSchema.index({ teamId: 1, 'metadata.relatedId': 1 });
 } catch (error) {
   console.log(error);
 }
 
-export const MongoImage: Model<{
-  teamId: string;
-  binary: Buffer;
-  metadata?: { fileId?: string };
-}> = models['image'] || model('image', ImageSchema);
-
-MongoImage.syncIndexes();
+export const MongoImage = getMongoModel<MongoImageSchemaType>('image', ImageSchema);

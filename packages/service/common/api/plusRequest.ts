@@ -1,4 +1,10 @@
-import axios, { Method, InternalAxiosRequestConfig, AxiosResponse } from 'axios';
+import axios, {
+  Method,
+  InternalAxiosRequestConfig,
+  AxiosResponse,
+  AxiosRequestConfig
+} from 'axios';
+import { FastGPTProUrl } from '../system/constants';
 
 interface ConfigType {
   headers?: { [key: string]: string };
@@ -70,7 +76,7 @@ instance.interceptors.request.use(requestStart, (err) => Promise.reject(err));
 instance.interceptors.response.use(responseSuccess, (err) => Promise.reject(err));
 
 export function request(url: string, data: any, config: ConfigType, method: Method): any {
-  if (!global.systemEnv || !global.systemEnv?.pluginBaseUrl) {
+  if (!FastGPTProUrl) {
     console.log('未部署商业版接口', url);
     return Promise.reject('The The request was denied...');
   }
@@ -84,7 +90,7 @@ export function request(url: string, data: any, config: ConfigType, method: Meth
 
   return instance
     .request({
-      baseURL: global.systemEnv.pluginBaseUrl,
+      baseURL: FastGPTProUrl,
       url,
       method,
       data: ['POST', 'PUT'].includes(method) ? data : null,
@@ -117,3 +123,9 @@ export function PUT<T = undefined>(url: string, data = {}, config: ConfigType = 
 export function DELETE<T = undefined>(url: string, data = {}, config: ConfigType = {}): Promise<T> {
   return request(url, data, config, 'DELETE');
 }
+
+export const plusRequest = (config: AxiosRequestConfig) =>
+  instance.request({
+    ...config,
+    baseURL: FastGPTProUrl
+  });

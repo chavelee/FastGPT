@@ -1,12 +1,13 @@
-### Fast GPT V4.6.6
+### FastGPT V4.8.20 更新说明
 
-1. 新增 - Http 模块请求头支持 Json 编辑器。
-2. 新增 - 搜索方式：分离向量语义检索，全文检索和重排，通过 RRF 进行排序合并。
-3. 新增 - [问题补全模块](https://doc.fastgpt.in/docs/workflow/modules/coreferenceresolution/)
-5. 新增 - [文本编辑模块](https://doc.fastgpt.in/docs/workflow/modules/text_editor/)
-6. 新增 - [判断器模块](https://doc.fastgpt.in/docs/workflow/modules/tfswitch/)
-7. 新增 - [自定义反馈模块](https://doc.fastgpt.in/docs/workflow/modules/custom_feedback/)
-8. 新增 - 【内容提取】模块支持选择模型，以及字段枚举
-9. [使用文档](https://doc.fastgpt.in/docs/intro/)
-10. [点击查看高级编排介绍文档](https://doc.fastgpt.in/docs/workflow)
-11. [点击查看商业版](https://doc.fastgpt.in/docs/commercial/)
+1. 新增 - 使用记录导出和仪表盘。
+2. 新增 - DeepSeek resoner 模型支持输出思考过程。
+3. 新增 - markdown 语法扩展，支持音视频（代码块 audio 和 video）。
+4. 新增 - 飞书/语雀知识库。
+5. 新增 - 工作流知识库检索支持按知识库权限进行过滤。
+6. 新增 - 流程等待插件，可以等待 n 毫秒后继续执行流程。
+7. 新增 - 飞书机器人接入，支持配置私有化飞书地址。
+8. 新增 - 支持通过 JSON 配置直接创建应用。
+9. 新增 - 支持通过 CURL 脚本快速创建 HTTP 插件。
+10. 新增 - 支持部门架构权限模式。
+
